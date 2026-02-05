@@ -289,19 +289,33 @@ mongoose.connect(MONGODB_URI)
     if (process.env.NODE_ENV === 'production') {
       cron.schedule("0 */6 * * *", async () => {
         console.log("Running scheduled scrape...");
-        await scrapeTimeOut();
+        try {
+          await scrapeTimeOut();
+        } catch (error) {
+          console.error("Scheduled scrape error:", error.message);
+        }
       });
     }
     
-    // Run initial scrape
-    scrapeTimeOut();
+    // Run initial scrape (with delay and error handling)
+    setTimeout(async () => {
+      try {
+        console.log("Starting initial scrape...");
+        await scrapeTimeOut();
+        console.log("Initial scrape completed");
+      } catch (error) {
+        console.error("Initial scrape error:", error.message);
+      }
+    }, 5000); // Wait 5 seconds before scraping
     
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
     });
   })
   .catch(err => {
     console.error("MongoDB connection error:", err);
+    process.exit(1);
   });
