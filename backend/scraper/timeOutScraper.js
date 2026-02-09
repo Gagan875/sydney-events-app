@@ -16,7 +16,7 @@ async function scrapeTimeOut() {
 
     const links = [];
 
-    $("a").each((i, el) => {
+    $("a").each((_, el) => {
       const href = $(el).attr("href");
 
       if (
@@ -34,60 +34,76 @@ async function scrapeTimeOut() {
     console.log(`Found ${uniqueLinks.length} event links`);
 
     for (let url of uniqueLinks.slice(0, 20)) {
-      const { data: eventPage } = await axios.get(url);
-      const $$ = cheerio.load(eventPage);
+      try {
+        const { data: eventPage } = await axios.get(url);
+        const $ = cheerio.load(eventPage);
 
-      const title = $$("h1").first().text().trim();
-      const description = $$("p").first().text().trim().slice(0, 300);
+        const title = $("h1").first().text().trim();
+        const description = $("p").first().text().trim().slice(0, 300);
 
-      const dateText = $$("time").first().text().trim();
-      const dateTime = new Date(dateText);
+        const dateText = $("time").first().text().trim();
+        const dateTime = new Date(dateText);
 
-      const venueName = $$("address").text().trim();
-      const imageUrl = $$("img").first().attr("src");
-
-      if (!title || isNaN(dateTime)) continue;
-
-      const contentString =
-        title + dateTime + venueName + description;
-      const contentHash = createHash(contentString);
-
-      const existing = await Event.findOne({ originalUrl: url });
-
-      if (!existing) {
-        await Event.create({
-          title,
-          description,
-          dateTime,
-          venueName,
-          city: "Sydney",
-          imageUrl,
-          sourceName: "TimeOut",
-          originalUrl: url,
-          contentHash,
-          lastScrapedAt: new Date(),
-          status: "new",
-        });
-        console.log("New event added:", title);
-      } else {
-        if (existing.contentHash !== contentHash) {
-          existing.title = title;
-          existing.description = description;
-          existing.dateTime = dateTime;
-          existing.venueName = venueName;
-          existing.imageUrl = imageUrl;
-          existing.contentHash = contentHash;
-          existing.status = "updated";
-          console.log("Updated event:", title);
+        const venueName = $("address").text().trim();
+        
+        // Try multiple ways to get image URL
+        let imageUrl = $("img").first().attr("src") || 
+                       $("img").first().attr("data-src") || 
+                       $("img").first().attr("data-lazy-src") ||
+                       $('meta[property="og:image"]').attr("content") ||
+                       $('meta[name="twitter:image"]').attr("content") ||
+                       "";
+        
+        // Make sure image URL is absolute
+        if (imageUrl && !imageUrl.startsWith("http")) {
+          imageUrl = "https://www.timeout.com" + imageUrl;
         }
-        existing.lastScrapedAt = new Date();
-        await existing.save();
+
+        if (!title || isNaN(dateTime)) continue;
+
+        const contentString = title + dateTime + venueName + description;
+        const contentHash = createHash(contentString);
+
+        const existing = await Event.findOne({ originalUrl: url });
+
+        if (!existing) {
+          await Event.create({
+            title,
+            description,
+            dateTime,
+            venueName,
+            city: "Sydney",
+            imageUrl,
+            sourceName: "TimeOut",
+            originalUrl: url,
+            contentHash,
+            lastScrapedAt: new Date(),
+            status: "new",
+          });
+          console.log("New event added:", title);
+        } else {
+          if (existing.contentHash !== contentHash) {
+            existing.title = title;
+            existing.description = description;
+            existing.dateTime = dateTime;
+            existing.venueName = venueName;
+            existing.imageUrl = imageUrl;
+            existing.contentHash = contentHash;
+            existing.status = "updated";
+            console.log("Updated event:", title);
+          }
+          existing.lastScrapedAt = new Date();
+          await existing.save();
+        }
+      } catch (error) {
+        console.error(`Error scraping ${url}:`, error.message);
+        continue;
       }
     }
 
     console.log("Scraping completed.");
   } catch (err) {
-    console.error(err.message);
+    console.error("Scraping error:", err.message);
   }
 }
 
